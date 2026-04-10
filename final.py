@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import collections
-
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -29,22 +29,23 @@ X_pre_train, X_pre_val, X_post_train, X_post_val, y_train, y_val = train_test_sp
     labels,
     test_size=0.2,
     random_state=42,
-    stratify=labels   
+    stratify=labels
 )
 
-# Move to device
-X_pre_train = X_pre_train.to(device)
-X_post_train = X_post_train.to(device)
-y_train = y_train.to(device)
+# -------------------------
+# DataLoader
+# -------------------------
+train_dataset = TensorDataset(X_pre_train, X_post_train, y_train)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,num_workers=4)
 
-X_pre_val = X_pre_val.to(device)
-X_post_val = X_post_val.to(device)
-y_val = y_val.to(device)
+val_dataset = TensorDataset(X_pre_val, X_post_val, y_val)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False,num_workers=4)
 
 # -------------------------
 # Model
 # -------------------------
 model = SiameseMultiFusion().to(device)
+
 classifier = nn.Sequential(
     nn.Linear(128, 64),
     nn.ReLU(),
@@ -53,14 +54,13 @@ classifier = nn.Sequential(
 ).to(device)
 
 # -------------------------
-# CLASS WEIGHTS (MAIN FIX)
+# CLASS WEIGHTS
 # -------------------------
-class_counts = torch.bincount(labels) + 1e-6
-weights = 1.0 / class_counts.float()
-weights = weights / weights.min()
+class_counts = torch.bincount(labels).float()
+weights = class_counts.sum() / class_counts
+weights = weights / weights.max()
 
 print("Class weights:", weights)
-
 criterion = nn.CrossEntropyLoss(weight=weights.to(device))
 
 # -------------------------
@@ -87,25 +87,20 @@ for epoch in range(epochs):
     model.train()
     total_loss = 0
 
-    # Shuffle indices
-    indices = torch.randperm(len(X_pre_train))
+    loop = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
 
-    loop = tqdm(indices, desc=f"Epoch {epoch+1}/{epochs}")
+    for pre, post, label in loop:
 
-    for i in loop:
-
-        pre = X_pre_train[i].unsqueeze(0)
-        post = X_post_train[i].unsqueeze(0)
-        label = y_train[i].unsqueeze(0)
+        # Move to device
+        pre = pre.to(device)
+        post = post.to(device)
+        label = label.to(device)
 
         emb_pre, emb_post, _ = model(pre, post)
 
         diff = torch.abs(emb_pre - emb_post)
 
-        # Important scaling
-        diff = diff * 2
-
-        preds = classifier(diff)
+        preds = classifier(diff*2)
 
         loss = criterion(preds, label)
 
@@ -116,7 +111,7 @@ for epoch in range(epochs):
         total_loss += loss.item()
         loop.set_postfix(loss=loss.item())
 
-    avg_train_loss = total_loss / len(X_pre_train)
+    avg_train_loss = total_loss / len(train_loader)
 
     # -------------------------
     # VALIDATION
@@ -129,28 +124,28 @@ for epoch in range(epochs):
 
     with torch.inference_mode():
 
-        for i in range(len(X_pre_val)):
+        for pre, post, label in val_loader:
 
-            pre = X_pre_val[i].unsqueeze(0)
-            post = X_post_val[i].unsqueeze(0)
-            label = y_val[i].unsqueeze(0)
+            pre = pre.to(device)
+            post = post.to(device)
+            label = label.to(device)
 
             emb_pre, emb_post, _ = model(pre, post)
 
             diff = torch.abs(emb_pre - emb_post)
-            diff = diff * 2
+            
 
-            preds = classifier(diff)
+            preds = classifier(diff*2)
 
             loss = criterion(preds, label)
             val_loss += loss.item()
 
             predicted = torch.argmax(preds, dim=1)
 
-            all_preds.append(predicted.item())
-            all_labels.append(label.item())
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(label.cpu().numpy())
 
-    avg_val_loss = val_loss / len(X_pre_val)
+    avg_val_loss = val_loss / len(val_loader)
 
     # -------------------------
     # Metrics
@@ -167,7 +162,6 @@ for epoch in range(epochs):
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     print(f"F1 Score: {f1:.4f}")
-
     print("Prediction distribution:", collections.Counter(all_preds))
     print("-" * 50)
 
@@ -196,7 +190,6 @@ for epoch in range(epochs):
         print("🛑 Early stopping triggered")
         break
 
-
 # -------------------------
 # FINAL EVALUATION
 # -------------------------
@@ -212,23 +205,22 @@ all_labels = []
 
 with torch.inference_mode():
 
-    for i in range(len(X_pre_val)):
+    for pre, post, label in val_loader:
 
-        pre = X_pre_val[i].unsqueeze(0)
-        post = X_post_val[i].unsqueeze(0)
-        label = y_val[i].unsqueeze(0)
+        pre = pre.to(device)
+        post = post.to(device)
+        label = label.to(device)
 
         emb_pre, emb_post, _ = model(pre, post)
 
         diff = torch.abs(emb_pre - emb_post)
-        diff = diff * 2
 
-        preds = classifier(diff)
+        preds = classifier(diff*2)
 
         predicted = torch.argmax(preds, dim=1)
 
-        all_preds.append(predicted.item())
-        all_labels.append(label.item())
+        all_preds.extend(predicted.cpu().numpy())
+        all_labels.extend(label.cpu().numpy())
 
 print("\nFINAL RESULTS ON UNSEEN DATA")
 print("Accuracy:", accuracy_score(all_labels, all_preds))
