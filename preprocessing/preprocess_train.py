@@ -64,7 +64,7 @@ pre_list = []
 post_list = []
 labels = []
 
-for i in range(1000):
+for i in range(800):
 
     pre_img = preprocess_geotiff(
         os.path.join(path, pre_images[i]),

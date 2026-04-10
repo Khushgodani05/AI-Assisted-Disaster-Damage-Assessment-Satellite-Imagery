@@ -1,45 +1,46 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from tqdm import tqdm
-import collections
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+if __name__ == "__main__":
 
-from major_project import SiameseMultiFusion
-from preprocessing.preprocess_train import pre_tensor, post_tensor, labels
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from tqdm import tqdm
+    import collections
+    from torch.utils.data import DataLoader, TensorDataset
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-# -------------------------
-# Device
-# -------------------------
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    from major_project import SiameseMultiFusion
+    from preprocessing.preprocess_train import pre_tensor, post_tensor, labels
 
-# -------------------------
-# Check Label Distribution
-# -------------------------
-print("Label distribution:", torch.bincount(labels))
+    torch.backends.cudnn.benchmark = True
 
-# -------------------------
-# Train-Val Split (STRATIFIED)
-# -------------------------
-X_pre_train, X_pre_val, X_post_train, X_post_val, y_train, y_val = train_test_split(
-    pre_tensor,
-    post_tensor,
-    labels,
-    test_size=0.2,
-    random_state=42,
-    stratify=labels
-)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# -------------------------
-# DataLoader
-# -------------------------
-train_dataset = TensorDataset(X_pre_train, X_post_train, y_train)
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,num_workers=4)
+    print("Label distribution:", torch.bincount(labels))
 
-val_dataset = TensorDataset(X_pre_val, X_post_val, y_val)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False,num_workers=4)
+    X_pre_train, X_pre_val, X_post_train, X_post_val, y_train, y_val = train_test_split(
+        pre_tensor,
+        post_tensor,
+        labels,
+        test_size=0.2,
+        random_state=42,
+        stratify=labels
+    )
+
+    train_dataset = TensorDataset(X_pre_train, X_post_train, y_train)
+    val_dataset = TensorDataset(X_pre_val, X_post_val, y_val)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=32,
+        shuffle=True,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=32,
+        shuffle=False,
+    )
 
 # -------------------------
 # Model
@@ -118,7 +119,7 @@ for epoch in range(epochs):
     # -------------------------
     model.eval()
 
-    val_loss = 0
+    val_loss = 0            
     all_preds = []
     all_labels = []
 
