@@ -9,7 +9,7 @@ if __name__ == "__main__":
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-    from major_project import SiameseMultiFusion
+    from model.major_project import SiameseMultiFusion
     from preprocessing.preprocess_train import pre_tensor, post_tensor, labels
 
     torch.backends.cudnn.benchmark = True

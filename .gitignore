@@ -1,2 +1,4 @@
 *.pth
 *.docx
+*.env
+*.pdf
